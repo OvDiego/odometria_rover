@@ -24,7 +24,7 @@ class MobileBaseNode(Node):
 
         self.diameter = 0.107
         self.radius = self.diameter / 2.0
-        self.wheel_dist = 0.00 #SE DEBE MEDIR LA DISTANCIA ENTRE RUEDA A RUEDA
+        self.wheel_dist = 0.00 #SE DEBE MEDIR LA DISTANCIA DE RUEDA A RUEDA
         self.ppr = 3600
 
         self.meters_per_tick = (math.pi * self.diameter) / self.ppr
