@@ -1,6 +1,6 @@
 import rclpy
+import math
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
 from Rosmaster_Lib import Rosmaster
 
 class MobileBaseNode(Node):
@@ -10,39 +10,25 @@ class MobileBaseNode(Node):
         self.bot = Rosmaster('/dev/ttyUSB0')
         self.bot.create_receive_threading()
 
-        self.subscription = self.create_subscription(
-            Twist,
-            'cmd_vel',
-            self.cmd_vel_callback,
-            10
-        )
+        self.dist = [0.0, 0.0, 0.0, 0.0]
+        self.diameter = 0.107
+        self.ppr = 3600
+        self.perimeter = self.diameter * math.pi
 
-        self.linear = 0.0
-        self.angular = 0.0
-        self.max_pwm = 60
+        self.timer = self.create_timer(0.05, self.encoder_timer_callback)
 
-        self.get_logger().info("Mobile base lista. Esperando /cmd_vel")
+        self.get_logger().info("Leyendo encoders")
 
-    def cmd_vel_callback(self, msg):
-        self.linear = msg.linear.x
-        self.angular = msg.angular.z
-        self.drive()
+    def encoder_timer_callback(self):
+        enc = self.bot.get_motor_encoder()
 
-    def drive(self):
-        pwm_linear = int(self.linear * self.max_pwm)
-        pwm_angular = int(self.angular * self.max_pwm)
+        if enc is None:
+            return
 
-        left = pwm_linear - pwm_angular
-        right = pwm_linear + pwm_angular
+        for i in range(4):
+            self.dist[i] = -enc[i] * (self.perimeter / self.ppr)
 
-        left = max(min(left, 100), -100)
-        right = max(min(right, 100), -100)
-
-        self.bot.set_motor(left, left, right, right)
-
-        self.get_logger().info(
-            f"L:{left} R:{right} v={self.linear:.2f} w={self.angular:.2f}"
-        )
+        self.get_logger().info(f"Encoders [m]: {self.dist}")
 
 def main(args=None):
     rclpy.init(args=args)
@@ -53,3 +39,10 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
+
+
+"""
+INSTRUCCIONES
+ros2 run mobile_base mobile_base.py
+SALIDA: Encoders [m]: [0.000, 0.000, 0.000, 0.000]
+"""
