@@ -1,6 +1,7 @@
 import rclpy
 import math
 from rclpy.node import Node
+from geometry_msgs.msg import Twist
 from Rosmaster_Lib import Rosmaster
 
 class MobileBaseNode(Node):
@@ -10,25 +11,78 @@ class MobileBaseNode(Node):
         self.bot = Rosmaster('/dev/ttyUSB0')
         self.bot.create_receive_threading()
 
-        self.dist = [0.0, 0.0, 0.0, 0.0]
+        self.subscription = self.create_subscription(
+            Twist,
+            'cmd_vel',
+            self.cmd_vel_callback,
+            10
+        )
+
+        self.max_pwm = 60
+        self.linear = 0.0
+        self.angular = 0.0
+
         self.diameter = 0.107
+        self.radius = self.diameter / 2.0
+        self.wheel_dist = 0.00 #SE DEBE MEDIR LA DISTANCIA ENTRE RUEDA A RUEDA
         self.ppr = 3600
-        self.perimeter = self.diameter * math.pi
 
-        self.timer = self.create_timer(0.05, self.encoder_timer_callback)
+        self.meters_per_tick = (math.pi * self.diameter) / self.ppr
 
-        self.get_logger().info("Leyendo encoders")
+        self.x = 0.0
+        self.y = 0.0
+        self.theta = 0.0
 
-    def encoder_timer_callback(self):
+        self.prev_enc = self.bot.get_motor_encoder()
+
+        self.timer = self.create_timer(0.05, self.update_odometry)
+
+        self.get_logger().info("Odometría activa")
+
+    def cmd_vel_callback(self, msg):
+        self.linear = msg.linear.x
+        self.angular = msg.angular.z
+        self.drive()
+
+    def drive(self):
+        pwm_linear = int(self.linear * self.max_pwm)
+        pwm_angular = int(self.angular * self.max_pwm)
+
+        left = pwm_linear - pwm_angular
+        right = pwm_linear + pwm_angular
+
+        left = max(min(left, 100), -100)
+        right = max(min(right, 100), -100)
+
+        self.bot.set_motor(left, left, right, right)
+
+    def update_odometry(self):
         enc = self.bot.get_motor_encoder()
-
-        if enc is None:
+        if enc is None or self.prev_enc is None:
             return
 
-        for i in range(4):
-            self.dist[i] = -enc[i] * (self.perimeter / self.ppr)
+        d_left = (
+            (enc[0] - self.prev_enc[0]) +
+            (enc[1] - self.prev_enc[1])
+        ) / 2.0 * self.meters_per_tick
 
-        self.get_logger().info(f"Encoders [m]: {self.dist}")
+        d_right = (
+            (enc[2] - self.prev_enc[2]) +
+            (enc[3] - self.prev_enc[3])
+        ) / 2.0 * self.meters_per_tick
+
+        self.prev_enc = enc
+
+        d_s = (d_right + d_left) / 2.0
+        d_theta = (d_right - d_left) / self.wheel_dist
+
+        self.theta += d_theta
+        self.x += d_s * math.cos(self.theta)
+        self.y += d_s * math.sin(self.theta)
+
+        self.get_logger().info(
+            f"x={self.x:.3f} y={self.y:.3f} theta={self.theta:.3f}"
+        )
 
 def main(args=None):
     rclpy.init(args=args)
@@ -44,5 +98,7 @@ if __name__ == '__main__':
 """
 INSTRUCCIONES
 ros2 run mobile_base mobile_base.py
-SALIDA: Encoders [m]: [0.000, 0.000, 0.000, 0.000]
+ros2 topic pub /cmd_vel geometry_msgs/Twist \ "{linear: {x: 0.2}, angular: {z: 0.0}}"   --->> VELOCIDAD
+ros2 topic pub /cmd_vel geometry_msgs/Twist \ "{linear: {x: 0.0}, angular: {z: 0.5}}"   --->> GIRO
+
 """
